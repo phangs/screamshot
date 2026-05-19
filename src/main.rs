@@ -39,7 +39,7 @@ fn get_config_path() -> std::path::PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     let mut path = std::path::PathBuf::from(home);
     path.push(".config");
-    path.push("screamshot");
+    path.push("mosaic");
     std::fs::create_dir_all(&path).ok();
     path.push("config.json");
     path
@@ -73,7 +73,7 @@ fn update_autostart(enabled: bool) {
     std::fs::create_dir_all(&autostart_dir).ok();
     
     let mut desktop_file = autostart_dir;
-    desktop_file.push("screamshot.desktop");
+    desktop_file.push("mosaic.desktop");
 
     if enabled {
         if let Ok(current_exe) = std::env::current_exe() {
@@ -83,12 +83,12 @@ fn update_autostart(enabled: bool) {
             icon_path.push(".local");
             icon_path.push("share");
             icon_path.push("icons");
-            icon_path.push("screamshot.png");
+            icon_path.push("mosaic.png");
             
             let content = format!(
                 "[Desktop Entry]\n\
                 Type=Application\n\
-                Name=Screamshot\n\
+                Name=Mosaic\n\
                 Exec={}\n\
                 Icon={}\n\
                 Comment=Region-Based Scrolling Capture\n\
@@ -600,7 +600,7 @@ fn save_and_clipboard(img: RgbaImage, prefix: &str, config: &AppConfig) {
     let _ = notify_rust::Notification::new()
         .summary(summary)
         .body(&body)
-        .appname("Screamshot")
+        .appname("Mosaic")
         .icon("camera-photo")
         .show();
 }
@@ -971,7 +971,7 @@ fn show_overlay(ctx: &egui::Context) {
     ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
 }
 
-struct ScreamshotApp {
+struct MosaicApp {
     tray_icon: Option<TrayIcon>,
     menu_channel: tray_icon::menu::MenuEventReceiver,
     state: AppState,
@@ -1008,7 +1008,7 @@ struct ScreamshotApp {
     image_receiver: std::sync::mpsc::Receiver<RgbaImage>,
 }
 
-impl ScreamshotApp {
+impl MosaicApp {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let tray_menu = Menu::new();
         let capture_region_i = MenuItem::new("Capture Region", true, None);
@@ -1026,7 +1026,7 @@ impl ScreamshotApp {
 
         let tray_icon = TrayIconBuilder::new()
             .with_menu(Box::new(tray_menu))
-            .with_tooltip("Screamshot")
+            .with_tooltip("Mosaic")
             .with_icon(generate_icon())
             .build()
             .unwrap();
@@ -1270,7 +1270,7 @@ impl ScreamshotApp {
                             let _ = ctx_clip.set_image(img_data);
                             
                             let _ = notify_rust::Notification::new()
-                                .summary("Screamshot")
+                                .summary("Mosaic")
                                 .body("Annotated screenshot copied to clipboard!")
                                 .show();
                         }
@@ -1747,7 +1747,7 @@ fn find_hovered_annotation(annotations: &[Annotation], pos: egui::Pos2) -> Optio
 }
 
 
-impl eframe::App for ScreamshotApp {
+impl eframe::App for MosaicApp {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         [0.0, 0.0, 0.0, 0.0]
     }
@@ -1825,11 +1825,11 @@ impl eframe::App for ScreamshotApp {
 
         if self.state == AppState::EditingSettings {
             egui::CentralPanel::default().show(ctx, |ui| {
-                ui.heading("Screamshot Settings");
+                ui.heading("Mosaic Settings");
                 ui.separator();
                 ui.add_space(5.0);
 
-                if ui.checkbox(&mut self.config.autostart, "Start Screamshot on System Startup").changed() {
+                if ui.checkbox(&mut self.config.autostart, "Start Mosaic on System Startup").changed() {
                     update_autostart(self.config.autostart);
                 }
                 
@@ -2274,7 +2274,7 @@ fn ensure_desktop_entry() {
         
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
         
-        // Save the premium icon to ~/.local/share/icons/screamshot.png
+        // Save the premium icon to ~/.local/share/icons/mosaic.png
         let mut icon_dir = std::path::PathBuf::from(&home);
         icon_dir.push(".local");
         icon_dir.push("share");
@@ -2282,7 +2282,7 @@ fn ensure_desktop_entry() {
         std::fs::create_dir_all(&icon_dir).ok();
         
         let mut icon_path = icon_dir.clone();
-        icon_path.push("screamshot.png");
+        icon_path.push("mosaic.png");
         
         // Generate the raw icon bytes and save them as a PNG!
         let (rgba, width, height) = generate_icon_raw();
@@ -2297,12 +2297,12 @@ fn ensure_desktop_entry() {
         std::fs::create_dir_all(&app_dir).ok();
         
         let mut desktop_file = app_dir;
-        desktop_file.push("screamshot.desktop");
+        desktop_file.push("mosaic.desktop");
         
         let content = format!(
             "[Desktop Entry]\n\
             Type=Application\n\
-            Name=Screamshot\n\
+            Name=Mosaic\n\
             Exec={}\n\
             Icon={}\n\
             Comment=Region-Based Scrolling Capture\n\
@@ -2342,9 +2342,9 @@ fn main() -> Result<(), eframe::Error> {
         ..Default::default()
     };
     eframe::run_native(
-        "Screamshot",
+        "Mosaic",
         options,
-        Box::new(|_cc| Ok(Box::new(ScreamshotApp::new(_cc)))),
+        Box::new(|_cc| Ok(Box::new(MosaicApp::new(_cc)))),
     )
 }
 

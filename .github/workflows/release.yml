@@ -23,23 +23,23 @@ jobs:
           - os: ubuntu-latest
             os-name: Linux
             target: x86_64-unknown-linux-gnu
-            bin-name: screamshot
-            asset-name: screamshot-linux-x64
+            bin-name: mosaic
+            asset-name: mosaic-linux-x64
           - os: macos-latest
             os-name: macOS
             target: x86_64-apple-darwin
-            bin-name: screamshot
-            asset-name: screamshot-macos-x64
+            bin-name: mosaic
+            asset-name: mosaic-macos-x64
           - os: macos-latest
             os-name: macOS-Silicon
             target: aarch64-apple-darwin
-            bin-name: screamshot
-            asset-name: screamshot-macos-arm64
+            bin-name: mosaic
+            asset-name: mosaic-macos-arm64
           - os: windows-latest
             os-name: Windows
             target: x86_64-pc-windows-msvc
-            bin-name: screamshot.exe
-            asset-name: screamshot-windows-x64.exe
+            bin-name: mosaic.exe
+            asset-name: mosaic-windows-x64.exe
 
     steps:
       - name: Checkout Source Code

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Screamshot Premium Linux Installer 🚀
+# Mosaic Premium Linux Installer 🚀
 # Optimized for Ubuntu/Debian and modern desktop environments (X11 & Wayland).
 
 set -euo pipefail
@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 # Decorative ASCII Art Header
 echo -e "${CYAN}"
 echo "========================================="
-echo "   SCREAMSHOT LINUX APP INSTALLER 🚀     "
+echo "     MOSAIC LINUX APP INSTALLER 🚀       "
 echo "========================================="
 echo -e "${NC}"
 
@@ -49,22 +49,22 @@ fi
 echo -e "${GREEN}Rust/Cargo compiler is available!${NC}"
 
 # Step 3: Compile the application in release mode
-echo -e "\n${BLUE}[3/5] Compiling Screamshot in release mode (highly optimized)...${NC}"
+echo -e "\n${BLUE}[3/5] Compiling Mosaic in release mode (highly optimized)...${NC}"
 cargo build --release
 
 # Step 4: Install the binary to ~/.local/bin
-echo -e "\n${BLUE}[4/5] Installing Screamshot executable...${NC}"
+echo -e "\n${BLUE}[4/5] Installing Mosaic executable...${NC}"
 BIN_DIR="$HOME/.local/bin"
 mkdir -p "$BIN_DIR"
 
-echo -e "Copying compiled binary to ${CYAN}${BIN_DIR}/screamshot${NC}"
-cp target/release/screamshot "$BIN_DIR/screamshot"
-chmod +x "$BIN_DIR/screamshot"
+echo -e "Copying compiled binary to ${CYAN}${BIN_DIR}/mosaic${NC}"
+cp target/release/mosaic "$BIN_DIR/mosaic"
+chmod +x "$BIN_DIR/mosaic"
 
 # Step 5: Automatically self-register launcher
 echo -e "\n${BLUE}[5/5] Performing system launcher integration...${NC}"
 # Run the newly installed binary in the background for 1 second to trigger self-registration, then terminate cleanly
-"$BIN_DIR/screamshot" &
+"$BIN_DIR/mosaic" &
 PID=$!
 sleep 1.5
 kill $PID || true
@@ -76,9 +76,9 @@ echo -e "\n${GREEN}========================================="
 echo "      INSTALLATION COMPLETE! 🎉          "
 echo "========================================="
 echo -e "${NC}"
-echo -e "Screamshot is now fully installed and registered on your system."
+echo -e "Mosaic is now fully installed and registered on your system."
 echo -e "1. You can now close your terminal."
 echo -e "2. Open your system App Launcher (press Super/Win key)."
-echo -e "3. Search for ${CYAN}Screamshot${NC} and click the icon to launch!"
+echo -e "3. Search for ${CYAN}Mosaic${NC} and click the icon to launch!"
 echo -e "4. Right-click the system tray icon to control capture features."
 echo ""
