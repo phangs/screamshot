@@ -5,10 +5,10 @@
 
 Screamshot is a premium, lightweight, and modern screen capture and scrolling-capture tool designed specifically for Linux desktop environments (X11 & Wayland). Powered by Rust, `egui`, and `xcap`, Screamshot allows users to select custom screen regions, perform dynamic scrolling captures with automatic vertical stitching, copy output to their clipboard instantly, and personalize application preferences through a sleek Settings panel.
 
-> ### 💖 Support the Project
-> **Screamshot** is a completely free, open-source utility built with love by volunteers. Compiling, packaging, and maintaining high-quality scrolling captures across Linux, macOS, and Windows requires active maintainer effort, automated build systems, and developer code-signing certificates.
+> ### 💖 Support the Project & My Family
+> **Screamshot** is a completely free, open-source utility built with love. Beyond code maintenance and hosting, maintaining this project is a personal journey: **I am actively developing and maintaining this tool to help support my daughter's basic daily needs.**
 > 
-> If Screamshot has saved you time and made your workflow easier, please consider supporting the project! Even a small coffee contribution goes a long way in keeping the project active, updated, and advertisement-free.
+> If Screamshot has saved you time and made your workflow easier, please consider supporting the project! Even a small coffee-sized contribution goes a long way and makes a direct, meaningful difference in keeping this project active and supporting my family.
 > 
 > **[☕ Support on Ko-fi](https://ko-fi.com/phangs/goal?g=1)**
 
