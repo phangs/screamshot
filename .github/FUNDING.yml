@@ -10,10 +10,15 @@ github: [phangs]
 # Open Collective name
 # open_collective: screamshot
 
+<<<<<<< HEAD
 https://ko-fi.com/phangsplays/goal?g=1
+=======
+# Ko-fi username
+ko_fi: phangs
+>>>>>>> 3cf5d17 (chore: update funding links to include ko-fi and custom goal url)
 
 # Liberapay username
 # liberapay: phangs
 
 # Custom donation URLs (up to 4 links)
-# custom: ['https://paypal.me/phangs', 'https://buymeacoffee.com/phangs']
+custom: ['https://ko-fi.com/phangs/goal?g=1']
