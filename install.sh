@@ -32,12 +32,44 @@ if command -v apt-get &> /dev/null; then
         libxcb-xfixes0-dev \
         libxkbcommon-dev \
         libgtk-3-dev \
+        libx11-dev \
+        libxtst-dev \
+        libwayland-dev \
         clang \
         pkg-config \
         build-essential
+elif command -v dnf &> /dev/null; then
+    echo -e "${YELLOW}Fedora/RHEL-based system detected. Requesting sudo to install development dependencies...${NC}"
+    sudo dnf groupinstall -y "Development Tools"
+    sudo dnf install -y \
+        dbus-devel \
+        libxdo-devel \
+        libxcb-devel \
+        libxkbcommon-devel \
+        gtk3-devel \
+        libX11-devel \
+        libXtst-devel \
+        wayland-devel \
+        clang \
+        pkg-config
+elif command -v pacman &> /dev/null; then
+    echo -e "${YELLOW}Arch Linux-based system detected. Requesting sudo to install development dependencies...${NC}"
+    sudo pacman -Syu --needed --noconfirm \
+        base-devel \
+        dbus \
+        libxdo \
+        libxcb \
+        libxkbcommon \
+        gtk3 \
+        libx11 \
+        libxtst \
+        wayland \
+        clang \
+        pkgconf
 else
-    echo -e "${YELLOW}Non-Debian system detected. Please ensure you have GTK3, DBus, and X11/Wayland dev libraries installed manually.${NC}"
+    echo -e "${YELLOW}Unknown package manager. Please ensure you have GTK3, DBus, and X11/Wayland dev libraries installed manually.${NC}"
 fi
+
 
 # Step 2: Ensure Cargo is installed
 echo -e "\n${BLUE}[2/5] Checking for Rust and Cargo compiler...${NC}"
