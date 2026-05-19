@@ -69,7 +69,8 @@ jobs:
             libxrandr-dev \
             libpipewire-0.3-dev \
             libwayland-dev \
-            libegl-dev
+            libegl-dev \
+            libgbm-dev
 
       - name: Cache Cargo Dependencies
         uses: actions/cache@v4
