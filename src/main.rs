@@ -61,6 +61,10 @@ fn save_config(config: &AppConfig) {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
+fn update_autostart(_enabled: bool) {}
+
+#[cfg(target_os = "linux")]
 fn update_autostart(enabled: bool) {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     let mut autostart_dir = std::path::PathBuf::from(&home);
@@ -1186,6 +1190,10 @@ impl eframe::App for ScreamshotApp {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
+fn ensure_desktop_entry() {}
+
+#[cfg(target_os = "linux")]
 fn ensure_desktop_entry() {
     if let Ok(current_exe) = std::env::current_exe() {
         let current_exe_str = current_exe.to_string_lossy();
@@ -1245,6 +1253,7 @@ fn ensure_desktop_entry() {
 fn main() -> Result<(), eframe::Error> {
     ensure_desktop_entry();
 
+    #[cfg(target_os = "linux")]
     if let Err(err) = gtk::init() {
         eprintln!("Failed to initialize GTK: {}", err);
     }
@@ -1271,6 +1280,7 @@ mod tests {
     use image::RgbaImage;
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn test_monitors() {
         use gtk::prelude::*;
 

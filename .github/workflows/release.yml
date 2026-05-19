@@ -1,0 +1,116 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*' # Triggers the workflow when you push a version tag (e.g., v1.0.0)
+  workflow_dispatch: # Allows you to trigger the build manually from GitHub UI
+
+jobs:
+  build:
+    name: Build - ${{ matrix.platform.os-name }}
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - os: ubuntu-latest
+            os-name: Linux
+            target: x86_64-unknown-linux-gnu
+            bin-name: screamshot
+            asset-name: screamshot-linux-x64
+          - os: macos-latest
+            os-name: macOS
+            target: x86_64-apple-darwin
+            bin-name: screamshot
+            asset-name: screamshot-macos-x64
+          - os: macos-latest
+            os-name: macOS-Silicon
+            target: aarch64-apple-darwin
+            bin-name: screamshot
+            asset-name: screamshot-macos-arm64
+          - os: windows-latest
+            os-name: Windows
+            target: x86_64-pc-windows-msvc
+            bin-name: screamshot.exe
+            asset-name: screamshot-windows-x64.exe
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.target }}
+
+      # Linux platform dependencies installation
+      - name: Install Linux Dependencies
+        if: matrix.platform.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libdbus-1-dev \
+            libxdo-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libgtk-3-dev \
+            pkg-config \
+            build-essential
+
+      - name: Cache Cargo Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ matrix.platform.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build Binary
+        run: cargo build --release --target ${{ matrix.platform.target }}
+
+      - name: Package Asset
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin-name }} dist/${{ matrix.platform.asset-name }}
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform.asset-name }}
+          path: dist/${{ matrix.platform.asset-name }}
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-artifacts
+
+      - name: Flatten Artifact Directory
+        run: |
+          mkdir -p release-assets
+          find dist-artifacts/ -type f -exec cp {} release-assets/ \;
+          ls -la release-assets/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: release-assets/*
+          draft: true
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
