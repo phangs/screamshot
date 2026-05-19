@@ -1,5 +1,7 @@
 # Screamshot 🚀
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Screamshot is a premium, lightweight, and modern screen capture and scrolling-capture tool designed specifically for Linux desktop environments (X11 & Wayland). Powered by Rust, `egui`, and `xcap`, Screamshot allows users to select custom screen regions, perform dynamic scrolling captures with automatic vertical stitching, copy output to their clipboard instantly, and personalize application preferences through a sleek Settings panel.
 
 ```mermaid
