@@ -36,12 +36,12 @@ graph TD
 
 We are actively designing and developing the next generation of Screamshot features. Below are the key pillars of our future roadmap:
 
-- [ ] **🎨 Premium Post-Capture Editor HUD**: A non-intrusive floating editor panel after capture, allowing real-time annotation with vector arrows, highlight brushes, text boxes, and step-counters.
-- [ ] **🛡️ Smart Blur & Redaction**: A drag-to-blur tool inside the Editor HUD to instantly pixelate or black out private information (like API keys, credentials, or personal details) in your captures.
-- [ ] **🔍 Instant OCR (Text Extraction)**: Copy text directly out of screenshots! One-click local OCR engine integration to extract non-copyable text directly into your system clipboard.
-- [ ] **⌨️ System-Wide Global Hotkeys**: Bind custom global shortcuts (such as `Super + Shift + S`) natively under Linux desktop environments to trigger region or scrolling captures instantly without tray navigation.
-- [ ] **🌐 One-Click Cloud Sharing**: Instant, optional, and secure uploads to modern hosting platforms (like Imgur, custom S3/MinIO buckets, or private media hosters) with auto-copied shareable markdown/HTML URLs.
-- [ ] **🎞️ Region Screen Recording & GIFs**: Expand region selection to record high-FPS animated GIFs or lightweight MP4 screen recordings of your custom screen bounds.
+- **🎨 Premium Post-Capture Editor HUD**: A non-intrusive floating editor panel after capture, allowing real-time annotation with vector arrows, highlight brushes, text boxes, and step-counters.
+- **🛡️ Smart Blur & Redaction**: A drag-to-blur tool inside the Editor HUD to instantly pixelate or black out private information (like API keys, credentials, or personal details) in your captures.
+- **🔍 Instant OCR (Text Extraction)**: Copy text directly out of screenshots! One-click local OCR engine integration to extract non-copyable text directly into your system clipboard.
+- **⌨️ System-Wide Global Hotkeys**: Bind custom global shortcuts (such as `Super + Shift + S`) natively under Linux desktop environments to trigger region or scrolling captures instantly without tray navigation.
+- **🌐 One-Click Cloud Sharing**: Instant, optional, and secure uploads to modern hosting platforms (like Imgur, custom S3/MinIO buckets, or private media hosters) with auto-copied shareable markdown/HTML URLs.
+- **🎞️ Region Screen Recording & GIFs**: Expand region selection to record high-FPS animated GIFs or lightweight MP4 screen recordings of your custom screen bounds.
 
 ---
 
