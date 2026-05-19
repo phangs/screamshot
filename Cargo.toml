@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+ab_glyph = "0.2.32"
 arboard = { version = "3.6.1", features = ["wayland-data-control"] }
 chrono = "0.4.44"
 eframe = "0.34.2"

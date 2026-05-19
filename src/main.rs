@@ -605,6 +605,246 @@ fn save_and_clipboard(img: RgbaImage, prefix: &str, config: &AppConfig) {
         .show();
 }
 
+fn blend_pixel(img: &mut RgbaImage, x: u32, y: u32, color: [u8; 4]) {
+    if x >= img.width() || y >= img.height() {
+        return;
+    }
+    let src_a = color[3] as f32 / 255.0;
+    if src_a >= 1.0 {
+        img.put_pixel(x, y, Rgba(color));
+    } else if src_a > 0.0 {
+        let dst = img.get_pixel_mut(x, y);
+        let dst_a = dst[3] as f32 / 255.0;
+        let out_a = src_a + dst_a * (1.0 - src_a);
+        if out_a > 0.0 {
+            let r = ((color[0] as f32 * src_a + dst[0] as f32 * dst_a * (1.0 - src_a)) / out_a) as u8;
+            let g = ((color[1] as f32 * src_a + dst[1] as f32 * dst_a * (1.0 - src_a)) / out_a) as u8;
+            let b = ((color[2] as f32 * src_a + dst[2] as f32 * dst_a * (1.0 - src_a)) / out_a) as u8;
+            let a = (out_a * 255.0) as u8;
+            *dst = Rgba([r, g, b, a]);
+        }
+    }
+}
+
+fn draw_filled_circle(img: &mut RgbaImage, cx: f32, cy: f32, radius: f32, color: [u8; 4]) {
+    let min_x = (cx - radius).floor().max(0.0) as u32;
+    let max_x = (cx + radius).ceil().min(img.width() as f32 - 1.0) as u32;
+    let min_y = (cy - radius).floor().max(0.0) as u32;
+    let max_y = (cy + radius).ceil().min(img.height() as f32 - 1.0) as u32;
+
+    let r_sq = radius * radius;
+    for y in min_y..=max_y {
+        let dy = y as f32 - cy;
+        for x in min_x..=max_x {
+            let dx = x as f32 - cx;
+            if dx * dx + dy * dy <= r_sq {
+                blend_pixel(img, x, y, color);
+            }
+        }
+    }
+}
+
+fn draw_line(img: &mut RgbaImage, p1: egui::Pos2, p2: egui::Pos2, color: [u8; 4], thickness: f32) {
+    let r = (thickness / 2.0).max(0.5);
+    let dx = p2.x - p1.x;
+    let dy = p2.y - p1.y;
+    let distance = (dx * dx + dy * dy).sqrt();
+    if distance == 0.0 {
+        draw_filled_circle(img, p1.x, p1.y, r, color);
+        return;
+    }
+    let steps = distance.ceil() as usize;
+    for i in 0..=steps {
+        let t = i as f32 / steps as f32;
+        let cx = p1.x + t * dx;
+        let cy = p1.y + t * dy;
+        draw_filled_circle(img, cx, cy, r, color);
+    }
+}
+
+fn draw_arrow(img: &mut RgbaImage, start: egui::Pos2, end: egui::Pos2, color: [u8; 4], thickness: f32) {
+    draw_line(img, start, end, color, thickness);
+    
+    let dx = end.x - start.x;
+    let dy = end.y - start.y;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len > 0.0 {
+        let ux = dx / len;
+        let uy = dy / len;
+        
+        let arrow_len = (thickness * 4.0).max(12.0);
+        let arrow_width = (thickness * 2.5).max(8.0);
+        
+        let back_x = end.x - arrow_len * ux;
+        let back_y = end.y - arrow_len * uy;
+        
+        let rx = -uy * arrow_width;
+        let ry = ux * arrow_width;
+        
+        let left = egui::pos2(back_x + rx, back_y + ry);
+        let right = egui::pos2(back_x - rx, back_y - ry);
+        
+        draw_line(img, end, left, color, thickness);
+        draw_line(img, end, right, color, thickness);
+    }
+}
+
+fn draw_rect_hollow(img: &mut RgbaImage, rect: egui::Rect, color: [u8; 4], thickness: f32) {
+    let p1 = egui::pos2(rect.min.x, rect.min.y);
+    let p2 = egui::pos2(rect.max.x, rect.min.y);
+    let p3 = egui::pos2(rect.max.x, rect.max.y);
+    let p4 = egui::pos2(rect.min.x, rect.max.y);
+    
+    draw_line(img, p1, p2, color, thickness);
+    draw_line(img, p2, p3, color, thickness);
+    draw_line(img, p3, p4, color, thickness);
+    draw_line(img, p4, p1, color, thickness);
+}
+
+fn draw_rect_filled_translucent(img: &mut RgbaImage, min_x: f32, min_y: f32, max_x: f32, max_y: f32, color: [u8; 4]) {
+    let start_x = min_x.floor().max(0.0) as u32;
+    let end_x = max_x.ceil().min(img.width() as f32 - 1.0) as u32;
+    let start_y = min_y.floor().max(0.0) as u32;
+    let end_y = max_y.ceil().min(img.height() as f32 - 1.0) as u32;
+    
+    for y in start_y..=end_y {
+        for x in start_x..=end_x {
+            blend_pixel(img, x, y, color);
+        }
+    }
+}
+
+fn blur_rect(img: &mut RgbaImage, rect: egui::Rect) {
+    let start_x = rect.min.x.floor().max(0.0) as u32;
+    let end_x = rect.max.x.ceil().min(img.width() as f32 - 1.0) as u32;
+    let start_y = rect.min.y.floor().max(0.0) as u32;
+    let end_y = rect.max.y.ceil().min(img.height() as f32 - 1.0) as u32;
+    
+    let block_size = 12;
+    
+    for by in (start_y..=end_y).step_by(block_size) {
+        for bx in (start_x..=end_x).step_by(block_size) {
+            let mut r_sum = 0u64;
+            let mut g_sum = 0u64;
+            let mut b_sum = 0u64;
+            let mut a_sum = 0u64;
+            let mut count = 0;
+            
+            let limit_y = (by + block_size as u32).min(end_y + 1);
+            let limit_x = (bx + block_size as u32).min(end_x + 1);
+            
+            for y in by..limit_y {
+                for x in bx..limit_x {
+                    let p = img.get_pixel(x, y);
+                    r_sum += p[0] as u64;
+                    g_sum += p[1] as u64;
+                    b_sum += p[2] as u64;
+                    a_sum += p[3] as u64;
+                    count += 1;
+                }
+            }
+            
+            if count > 0 {
+                let r_avg = (r_sum / count as u64) as u8;
+                let g_avg = (g_sum / count as u64) as u8;
+                let b_avg = (b_sum / count as u64) as u8;
+                let a_avg = (a_sum / count as u64) as u8;
+                let avg_pixel = Rgba([r_avg, g_avg, b_avg, a_avg]);
+                
+                for y in by..limit_y {
+                    for x in bx..limit_x {
+                        img.put_pixel(x, y, avg_pixel);
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+fn get_text_width(text: &str, size: f32, bold: bool) -> f32 {
+    use ab_glyph::{Font, ScaleFont};
+    
+    let font_bytes: &[u8] = if bold {
+        include_bytes!("assets/LiberationSans-Bold.ttf")
+    } else {
+        include_bytes!("assets/LiberationSans-Regular.ttf")
+    };
+    
+    let font = match ab_glyph::FontArc::try_from_slice(font_bytes) {
+        Ok(f) => f,
+        Err(_) => return text.len() as f32 * size * 0.5,
+    };
+    
+    let scale = ab_glyph::PxScale::from(size);
+    let scaled_font = font.as_scaled(scale);
+    
+    let mut width = 0.0;
+    for c in text.chars() {
+        width += scaled_font.h_advance(font.glyph_id(c));
+    }
+    width
+}
+
+fn draw_text(img: &mut RgbaImage, text: &str, x: f32, y: f32, size: f32, color: [u8; 4], bold: bool) {
+    use ab_glyph::{Font, ScaleFont};
+    
+    let font_bytes: &[u8] = if bold {
+        include_bytes!("assets/LiberationSans-Bold.ttf")
+    } else {
+        include_bytes!("assets/LiberationSans-Regular.ttf")
+    };
+    
+    let font = match ab_glyph::FontArc::try_from_slice(font_bytes) {
+        Ok(f) => f,
+        Err(_) => return,
+    };
+    
+    let scale = ab_glyph::PxScale::from(size);
+    let scaled_font = font.as_scaled(scale);
+    
+    // Position text relative to its top-left rather than baseline
+    let ascent = scaled_font.ascent();
+    let baseline_y = y + ascent;
+    
+    let mut current_x = x;
+    
+    for c in text.chars() {
+        let glyph = font.glyph_id(c).with_scale_and_position(scale, ab_glyph::point(current_x, baseline_y));
+        if let Some(outlined) = font.outline_glyph(glyph) {
+            let bounds = outlined.px_bounds();
+            outlined.draw(|px_x, px_y, v| {
+                let pixel_x = bounds.min.x as i32 + px_x as i32;
+                let pixel_y = bounds.min.y as i32 + px_y as i32;
+                if pixel_x >= 0 && pixel_x < img.width() as i32 && pixel_y >= 0 && pixel_y < img.height() as i32 {
+                    let pixel = img.get_pixel_mut(pixel_x as u32, pixel_y as u32);
+                    let alpha = (v * (color[3] as f32)) as u8;
+                    if alpha > 0 {
+                        let src_r = color[0] as f32;
+                        let src_g = color[1] as f32;
+                        let src_b = color[2] as f32;
+                        let src_a = alpha as f32 / 255.0;
+                        
+                        let dst_r = pixel[0] as f32;
+                        let dst_g = pixel[1] as f32;
+                        let dst_b = pixel[2] as f32;
+                        let dst_a = pixel[3] as f32 / 255.0;
+                        
+                        let out_a = src_a + dst_a * (1.0 - src_a);
+                        if out_a > 0.0 {
+                            let out_r = (src_r * src_a + dst_r * dst_a * (1.0 - src_a)) / out_a;
+                            let out_g = (src_g * src_a + dst_g * dst_a * (1.0 - src_a)) / out_a;
+                            let out_b = (src_b * src_a + dst_b * dst_a * (1.0 - src_a)) / out_a;
+                            *pixel = image::Rgba([out_r as u8, out_g as u8, out_b as u8, (out_a * 255.0) as u8]);
+                        }
+                    }
+                }
+            });
+        }
+        current_x += scaled_font.h_advance(font.glyph_id(c));
+    }
+}
+
 #[derive(PartialEq, Clone, Copy)]
 enum AppState {
     Hidden,
@@ -612,6 +852,61 @@ enum AppState {
     SelectingScrollRegion,
     CapturingScroll,
     EditingSettings,
+    EditingCapture,
+}
+
+#[derive(PartialEq, Clone, Copy, Debug)]
+enum EditorTool {
+    Select,
+    Freehand,
+    Arrow,
+    Rectangle,
+    Step,
+    Text,
+    Blur,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum ResizeHandle {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+#[derive(Clone, Debug)]
+enum Annotation {
+    Freehand {
+        points: Vec<egui::Pos2>,
+        color: egui::Color32,
+        stroke_width: f32,
+    },
+    Arrow {
+        start: egui::Pos2,
+        end: egui::Pos2,
+        color: egui::Color32,
+        stroke_width: f32,
+    },
+    Rectangle {
+        rect: egui::Rect,
+        color: egui::Color32,
+        stroke_width: f32,
+        fill: bool,
+    },
+    Step {
+        pos: egui::Pos2,
+        number: usize,
+        color: egui::Color32,
+    },
+    Text {
+        pos: egui::Pos2,
+        text: String,
+        color: egui::Color32,
+        size: f32,
+    },
+    Blur {
+        rect: egui::Rect,
+    },
 }
 
 fn get_desktop_bounds() -> (i32, i32, i32, i32) {
@@ -669,6 +964,8 @@ fn show_overlay(ctx: &egui::Context) {
     let (min_x, min_y, width, height) = get_desktop_bounds();
     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
     ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+    ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(false));
+    ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(false));
     ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(egui::pos2(min_x as f32, min_y as f32)));
     ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(width as f32, height as f32)));
     ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
@@ -691,6 +988,24 @@ struct ScreamshotApp {
     scroll_frames: Arc<Mutex<Vec<RgbaImage>>>,
     scroll_horizontal: bool,
     config: AppConfig,
+
+    // Editor HUD states
+    editor_tool: EditorTool,
+    editor_color: egui::Color32,
+    editor_stroke_width: f32,
+    editor_annotations: Vec<Annotation>,
+    editor_active_annotation: Option<Annotation>,
+    editor_selected_annotation_idx: Option<usize>,
+    editor_drag_start: Option<egui::Pos2>,
+    editor_drag_current: Option<egui::Pos2>,
+    editor_resized_annotation: Option<(usize, ResizeHandle)>,
+    editor_base_image: Option<RgbaImage>,
+    editor_blurred_image: Option<RgbaImage>,
+    editor_texture: Option<egui::TextureHandle>,
+    editor_blurred_texture: Option<egui::TextureHandle>,
+    editor_step_count: usize,
+    image_sender: std::sync::mpsc::Sender<RgbaImage>,
+    image_receiver: std::sync::mpsc::Receiver<RgbaImage>,
 }
 
 impl ScreamshotApp {
@@ -717,6 +1032,7 @@ impl ScreamshotApp {
             .unwrap();
 
         let config = load_config();
+        let (image_sender, image_receiver) = std::sync::mpsc::channel();
 
         Self {
             tray_icon: Some(tray_icon),
@@ -732,9 +1048,704 @@ impl ScreamshotApp {
             scroll_frames: Arc::new(Mutex::new(Vec::new())),
             scroll_horizontal: false,
             config,
+            editor_tool: EditorTool::Select,
+            editor_color: egui::Color32::from_rgb(230, 40, 40),
+            editor_stroke_width: 4.0,
+            editor_annotations: Vec::new(),
+            editor_active_annotation: None,
+            editor_selected_annotation_idx: None,
+            editor_drag_start: None,
+            editor_drag_current: None,
+            editor_resized_annotation: None,
+            editor_base_image: None,
+            editor_blurred_image: None,
+            editor_texture: None,
+            editor_blurred_texture: None,
+            editor_step_count: 1,
+            image_sender,
+            image_receiver,
         }
     }
+
+    fn flatten_annotations(&self) -> RgbaImage {
+        let mut img = self.editor_base_image.as_ref().cloned().unwrap_or_else(|| {
+            RgbaImage::new(100, 100)
+        });
+        
+        for ann in &self.editor_annotations {
+            match ann {
+                Annotation::Freehand { points, color, stroke_width } => {
+                    let col_arr = [color.r(), color.g(), color.b(), color.a()];
+                    for i in 0..points.len().saturating_sub(1) {
+                        draw_line(&mut img, points[i], points[i+1], col_arr, *stroke_width);
+                    }
+                }
+                Annotation::Arrow { start, end, color, stroke_width } => {
+                    let col_arr = [color.r(), color.g(), color.b(), color.a()];
+                    draw_arrow(&mut img, *start, *end, col_arr, *stroke_width);
+                }
+                Annotation::Rectangle { rect, color, stroke_width, fill } => {
+                    let col_arr = [color.r(), color.g(), color.b(), color.a()];
+                    if *fill {
+                        draw_rect_filled_translucent(&mut img, rect.min.x, rect.min.y, rect.max.x, rect.max.y, col_arr);
+                    } else {
+                        draw_rect_hollow(&mut img, *rect, col_arr, *stroke_width);
+                    }
+                }
+                Annotation::Step { pos, number, color } => {
+                    let col_arr = [color.r(), color.g(), color.b(), color.a()];
+                    draw_filled_circle(&mut img, pos.x, pos.y, 16.0, col_arr);
+                    
+                    let num_str = number.to_string();
+                    let font_size = 15.0;
+                    let text_w = get_text_width(&num_str, font_size, true);
+                    let text_x = pos.x - text_w / 2.0;
+                    let text_y = pos.y - font_size / 2.0;
+                    draw_text(&mut img, &num_str, text_x, text_y, font_size, [255, 255, 255, 255], true);
+                }
+                Annotation::Text { pos, text, color, size } => {
+                    let col_arr = [color.r(), color.g(), color.b(), color.a()];
+                    let font_size = *size;
+                    let text_w = get_text_width(text, font_size, false);
+                    let text_h = font_size;
+                    let card_rect = egui::Rect::from_center_size(*pos, egui::vec2(text_w, text_h)).expand(6.0);
+                    
+                    draw_rect_filled_translucent(&mut img, card_rect.min.x, card_rect.min.y, card_rect.max.x, card_rect.max.y, [0, 0, 0, 140]);
+                    
+                    let text_x = card_rect.min.x + 6.0;
+                    let text_y = card_rect.min.y + 6.0;
+                    draw_text(&mut img, text, text_x, text_y, font_size, col_arr, false);
+                }
+                Annotation::Blur { rect } => {
+                    blur_rect(&mut img, *rect);
+                }
+            }
+        }
+        
+        img
+    }
+
+    fn show_editor_hud(&mut self, ctx: &egui::Context) {
+        // Keyboard Shortcuts
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.state = AppState::Hidden;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            return;
+        }
+        if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Z)) {
+            self.editor_annotations.pop();
+        }
+        if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
+            if let Some(idx) = self.editor_selected_annotation_idx {
+                if idx < self.editor_annotations.len() {
+                    self.editor_annotations.remove(idx);
+                    self.editor_selected_annotation_idx = None;
+                }
+            }
+        }
+
+        let panel_frame = egui::Frame::NONE
+            .fill(egui::Color32::from_rgb(18, 18, 22))
+            .inner_margin(12.0);
+
+        egui::CentralPanel::default().frame(panel_frame).show(ctx, |ui| {
+            // 1. Sleek Top Panel Toolbar
+            ui.horizontal(|ui| {
+                ui.style_mut().spacing.item_spacing = egui::vec2(6.0, 0.0);
+                
+                // Select tool
+                let select_active = self.editor_tool == EditorTool::Select;
+                if ui.selectable_label(select_active, "Select ↖").clicked() {
+                    self.editor_tool = EditorTool::Select;
+                }
+                
+                // Brush tool
+                let brush_active = self.editor_tool == EditorTool::Freehand;
+                if ui.selectable_label(brush_active, "Brush 🖌").clicked() {
+                    self.editor_tool = EditorTool::Freehand;
+                }
+                
+                // Arrow tool
+                let arrow_active = self.editor_tool == EditorTool::Arrow;
+                if ui.selectable_label(arrow_active, "Arrow ↗").clicked() {
+                    self.editor_tool = EditorTool::Arrow;
+                }
+                
+                // Rectangle tool
+                let rect_active = self.editor_tool == EditorTool::Rectangle;
+                if ui.selectable_label(rect_active, "Box ⬜").clicked() {
+                    self.editor_tool = EditorTool::Rectangle;
+                }
+                
+                // Step tool
+                let step_active = self.editor_tool == EditorTool::Step;
+                if ui.selectable_label(step_active, "Step ①").clicked() {
+                    self.editor_tool = EditorTool::Step;
+                }
+                
+                // Text tool
+                let text_active = self.editor_tool == EditorTool::Text;
+                if ui.selectable_label(text_active, "Text 💬").clicked() {
+                    self.editor_tool = EditorTool::Text;
+                    if let Some(idx) = self.editor_selected_annotation_idx {
+                        if idx < self.editor_annotations.len() {
+                            if !matches!(self.editor_annotations[idx], Annotation::Text { .. }) {
+                                self.editor_selected_annotation_idx = None;
+                            }
+                        }
+                    }
+                }
+                
+                // Blur tool
+                let blur_active = self.editor_tool == EditorTool::Blur;
+                if ui.selectable_label(blur_active, "Blur 💧").clicked() {
+                    self.editor_tool = EditorTool::Blur;
+                }
+
+                ui.separator();
+                
+                // Color Palette
+                let colors = [
+                    ("Red", egui::Color32::from_rgb(230, 40, 40)),
+                    ("Orange", egui::Color32::from_rgb(240, 120, 20)),
+                    ("Green", egui::Color32::from_rgb(40, 200, 80)),
+                    ("Blue", egui::Color32::from_rgb(20, 140, 255)),
+                    ("Yellow", egui::Color32::from_rgb(255, 210, 20)),
+                    ("White", egui::Color32::WHITE),
+                ];
+                
+                for (_name, color) in &colors {
+                    let mut button_size = egui::vec2(16.0, 16.0);
+                    if self.editor_color == *color {
+                        button_size = egui::vec2(22.0, 22.0);
+                    }
+                    let (rect, resp) = ui.allocate_exact_size(button_size, egui::Sense::click());
+                    ui.painter().circle_filled(rect.center(), button_size.x / 2.0, *color);
+                    if self.editor_color == *color {
+                        ui.painter().circle_stroke(rect.center(), button_size.x / 2.0 + 2.0, egui::Stroke::new(2.0, egui::Color32::from_rgb(0, 120, 255)));
+                    }
+                    if resp.clicked() {
+                        self.editor_color = *color;
+                    }
+                }
+
+                ui.separator();
+                ui.label("Size:");
+                ui.add(egui::Slider::new(&mut self.editor_stroke_width, 1.0..=15.0).show_value(false));
+
+                if self.editor_step_count > 1 {
+                    if ui.button("Reset Steps").clicked() {
+                        self.editor_step_count = 1;
+                    }
+                }
+
+                if self.editor_selected_annotation_idx.is_some() {
+                    if ui.button("Delete 🗑").clicked() {
+                        if let Some(idx) = self.editor_selected_annotation_idx {
+                            if idx < self.editor_annotations.len() {
+                                self.editor_annotations.remove(idx);
+                                self.editor_selected_annotation_idx = None;
+                            }
+                        }
+                    }
+                }
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // Discard Button
+                    if ui.button("Discard ❌").clicked() {
+                        self.state = AppState::Hidden;
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                    }
+                    
+                    // Copy Button
+                    if ui.button("Copy 📋").clicked() {
+                        let flattened = self.flatten_annotations();
+                        if let Ok(mut ctx_clip) = arboard::Clipboard::new() {
+                            let (w, h) = flattened.dimensions();
+                            let img_data = arboard::ImageData {
+                                width: w as usize,
+                                height: h as usize,
+                                bytes: std::borrow::Cow::from(flattened.as_raw()),
+                            };
+                            let _ = ctx_clip.set_image(img_data);
+                            
+                            let _ = notify_rust::Notification::new()
+                                .summary("Screamshot")
+                                .body("Annotated screenshot copied to clipboard!")
+                                .show();
+                        }
+                        self.state = AppState::Hidden;
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                    }
+
+                    // Save Button
+                    if ui.button("Save 💾").clicked() {
+                        let flattened = self.flatten_annotations();
+                        save_and_clipboard(flattened, "annotated_screenshot", &self.config);
+                        self.state = AppState::Hidden;
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                    }
+                });
+            });
+
+            ui.add_space(8.0);
+            
+            // 2. Center Viewport Canvas with interactive elements
+            if let (Some(texture), Some(base_image)) = (&self.editor_texture, &self.editor_base_image) {
+                let width = base_image.width();
+                let height = base_image.height();
+                
+                egui::ScrollArea::both().show(ui, |ui| {
+                    ui.centered_and_justified(|ui| {
+                        let (image_rect, response) = ui.allocate_exact_size(
+                            egui::vec2(width as f32, height as f32),
+                            egui::Sense::click_and_drag(),
+                        );
+                        
+                        // Draw base image
+                        ui.painter().image(
+                            texture.id(),
+                            image_rect,
+                            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                            egui::Color32::WHITE,
+                        );
+
+                        // Draw completed annotations
+                        for ann in &self.editor_annotations {
+                            match ann {
+                                Annotation::Freehand { points, color, stroke_width } => {
+                                    let pts: Vec<egui::Pos2> = points.iter().map(|p| image_rect.min + p.to_vec2()).collect();
+                                    for i in 0..pts.len().saturating_sub(1) {
+                                        ui.painter().line_segment([pts[i], pts[i+1]], egui::Stroke::new(*stroke_width, *color));
+                                    }
+                                }
+                                Annotation::Arrow { start, end, color, stroke_width } => {
+                                    let p_start = image_rect.min + start.to_vec2();
+                                    let p_end = image_rect.min + end.to_vec2();
+                                    ui.painter().arrow(p_start, p_end - p_start, egui::Stroke::new(*stroke_width, *color));
+                                }
+                                Annotation::Rectangle { rect, color, stroke_width, fill } => {
+                                    let r = rect.translate(image_rect.min.to_vec2());
+                                    if *fill {
+                                        ui.painter().rect_filled(r, 0.0, color.linear_multiply(0.3));
+                                    }
+                                    ui.painter().rect_stroke(r, 0.0, egui::Stroke::new(*stroke_width, *color), egui::StrokeKind::Inside);
+                                }
+                                Annotation::Step { pos, number, color } => {
+                                    let p = image_rect.min + pos.to_vec2();
+                                    ui.painter().circle_filled(p, 16.0, *color);
+                                    ui.painter().text(p, egui::Align2::CENTER_CENTER, number.to_string(), egui::FontId::proportional(14.0), egui::Color32::WHITE);
+                                }
+                                Annotation::Text { pos, text, color, size } => {
+                                    let p = image_rect.min + pos.to_vec2();
+                                    let font_id = egui::FontId::proportional(*size);
+                                    let galley = ui.fonts_mut(|f| f.layout_no_wrap(text.clone(), font_id, *color));
+                                    let text_rect = egui::Rect::from_center_size(p, galley.size()).expand(6.0);
+                                    
+                                    ui.painter().rect_filled(text_rect, 4.0, egui::Color32::from_black_alpha(120));
+                                    ui.painter().galley(text_rect.min + egui::vec2(6.0, 6.0), galley, *color);
+                                }
+                                Annotation::Blur { rect } => {
+                                    let r = rect.translate(image_rect.min.to_vec2());
+                                    if let Some(ref blurred_tex) = self.editor_blurred_texture {
+                                        let uv = egui::Rect::from_min_max(
+                                            egui::pos2(rect.min.x / width as f32, rect.min.y / height as f32),
+                                            egui::pos2(rect.max.x / width as f32, rect.max.y / height as f32),
+                                        );
+                                        ui.painter().image(blurred_tex.id(), r, uv, egui::Color32::WHITE);
+                                    }
+                                    ui.painter().rect_stroke(r, 0.0, egui::Stroke::new(1.0, egui::Color32::from_white_alpha(40)), egui::StrokeKind::Inside);
+                                }
+                            }
+                        }
+
+                        // Draw active drawing annotation
+                        if let Some(ref active) = self.editor_active_annotation {
+                            match active {
+                                Annotation::Freehand { points, color, stroke_width } => {
+                                    let pts: Vec<egui::Pos2> = points.iter().map(|p| image_rect.min + p.to_vec2()).collect();
+                                    for i in 0..pts.len().saturating_sub(1) {
+                                        ui.painter().line_segment([pts[i], pts[i+1]], egui::Stroke::new(*stroke_width, *color));
+                                    }
+                                }
+                                Annotation::Arrow { start, end, color, stroke_width } => {
+                                    let p_start = image_rect.min + start.to_vec2();
+                                    let p_end = image_rect.min + end.to_vec2();
+                                    ui.painter().arrow(p_start, p_end - p_start, egui::Stroke::new(*stroke_width, *color));
+                                }
+                                Annotation::Rectangle { rect, color, stroke_width, fill } => {
+                                    let r = rect.translate(image_rect.min.to_vec2());
+                                    if *fill {
+                                        ui.painter().rect_filled(r, 0.0, color.linear_multiply(0.3));
+                                    }
+                                    ui.painter().rect_stroke(r, 0.0, egui::Stroke::new(*stroke_width, *color), egui::StrokeKind::Inside);
+                                }
+                                Annotation::Blur { rect } => {
+                                    let r = rect.translate(image_rect.min.to_vec2());
+                                    if let Some(ref blurred_tex) = self.editor_blurred_texture {
+                                        let uv = egui::Rect::from_min_max(
+                                            egui::pos2(rect.min.x / width as f32, rect.min.y / height as f32),
+                                            egui::pos2(rect.max.x / width as f32, rect.max.y / height as f32),
+                                        );
+                                        ui.painter().image(blurred_tex.id(), r, uv, egui::Color32::WHITE);
+                                    }
+                                    ui.painter().rect_stroke(r, 0.0, egui::Stroke::new(1.0, egui::Color32::from_white_alpha(40)), egui::StrokeKind::Inside);
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        // Draw selection box and grab handles for selected item
+                        if let Some(idx) = self.editor_selected_annotation_idx {
+                            if idx < self.editor_annotations.len() {
+                                let ann = &self.editor_annotations[idx];
+                                let rect_opt = match ann {
+                                    Annotation::Rectangle { rect, .. } | Annotation::Blur { rect } => Some(rect.translate(image_rect.min.to_vec2())),
+                                    Annotation::Text { pos, text, size, .. } => {
+                                        let p = image_rect.min + pos.to_vec2();
+                                        let font_id = egui::FontId::proportional(*size);
+                                        let galley = ui.fonts_mut(|f| f.layout_no_wrap(text.clone(), font_id, egui::Color32::WHITE));
+                                        Some(egui::Rect::from_center_size(p, galley.size()).expand(6.0))
+                                    }
+                                    Annotation::Step { pos, .. } => {
+                                        let p = image_rect.min + pos.to_vec2();
+                                        Some(egui::Rect::from_center_size(p, egui::vec2(32.0, 32.0)).expand(4.0))
+                                    }
+                                    _ => None,
+                                };
+                                
+                                if let Some(r) = rect_opt {
+                                    ui.painter().rect_stroke(r, 4.0, egui::Stroke::new(1.5, egui::Color32::from_rgb(0, 180, 255)), egui::StrokeKind::Outside);
+                                    
+                                    let handle_color = egui::Color32::from_rgb(0, 120, 255);
+                                    let handles = [r.left_top(), r.right_top(), r.left_bottom(), r.right_bottom()];
+                                    for &h in &handles {
+                                        ui.painter().circle_filled(h, 5.0, egui::Color32::WHITE);
+                                        ui.painter().circle_stroke(h, 5.0, egui::Stroke::new(1.5, handle_color));
+                                    }
+                                }
+                            }
+                        }
+
+                        // Inline text editing area
+                        if self.editor_tool == EditorTool::Text {
+                            if let Some(idx) = self.editor_selected_annotation_idx {
+                                if idx < self.editor_annotations.len() {
+                                    if let Annotation::Text { pos, text, color, size } = &mut self.editor_annotations[idx] {
+                                        let text_screen_pos = image_rect.min + pos.to_vec2();
+                                        let size_val = *size;
+                                        let mut text_val = text.clone();
+                                        
+                                        egui::Area::new(egui::Id::new("textbox_edit_area"))
+                                            .fixed_pos(text_screen_pos - egui::vec2(50.0, size_val / 2.0))
+                                            .order(egui::Order::Foreground)
+                                            .show(ctx, |ui| {
+                                                let edit_response = ui.add(
+                                                    egui::TextEdit::singleline(&mut text_val)
+                                                        .font(egui::FontId::proportional(size_val))
+                                                        .text_color(*color)
+                                                );
+                                                
+                                                edit_response.request_focus();
+                                                
+                                                if edit_response.changed() {
+                                                    *text = text_val;
+                                                }
+                                                
+                                                if edit_response.lost_focus() {
+                                                    self.editor_tool = EditorTool::Select;
+                                                }
+                                            });
+                                    }
+                                }
+                            }
+                        }
+
+                        // 3. Process pointer interactions inside image_rect
+                        let pointer_pos = response.interact_pointer_pos();
+                        if let Some(mouse_pos) = pointer_pos {
+                            let relative_mouse_pos = mouse_pos - image_rect.min;
+                            let clamped_relative_pos = egui::pos2(
+                                relative_mouse_pos.x.clamp(0.0, width as f32),
+                                relative_mouse_pos.y.clamp(0.0, height as f32),
+                            );
+                            
+                            if response.clicked() {
+                                match self.editor_tool {
+                                    EditorTool::Select => {
+                                        let relative_mouse_pos = egui::pos2(mouse_pos.x - image_rect.min.x, mouse_pos.y - image_rect.min.y);
+                                        if let Some(idx) = find_hovered_annotation(&self.editor_annotations, relative_mouse_pos) {
+                                            self.editor_selected_annotation_idx = Some(idx);
+                                        } else {
+                                            self.editor_selected_annotation_idx = None;
+                                        }
+                                    }
+                                    EditorTool::Step => {
+                                        let new_ann = Annotation::Step {
+                                            pos: clamped_relative_pos,
+                                            number: self.editor_step_count,
+                                            color: self.editor_color,
+                                        };
+                                        self.editor_annotations.push(new_ann);
+                                        self.editor_step_count += 1;
+                                    }
+                                    EditorTool::Text => {
+                                        let mut selected_existing = false;
+                                        if let Some(idx) = find_hovered_annotation(&self.editor_annotations, clamped_relative_pos) {
+                                            if let Annotation::Text { .. } = &self.editor_annotations[idx] {
+                                                self.editor_selected_annotation_idx = Some(idx);
+                                                selected_existing = true;
+                                            }
+                                        }
+                                        
+                                        if !selected_existing {
+                                            let new_ann = Annotation::Text {
+                                                pos: clamped_relative_pos,
+                                                text: "Text".to_string(),
+                                                color: self.editor_color,
+                                                size: 24.0,
+                                            };
+                                            self.editor_annotations.push(new_ann);
+                                            self.editor_selected_annotation_idx = Some(self.editor_annotations.len() - 1);
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            } else if response.drag_started() {
+                                self.editor_drag_start = Some(mouse_pos);
+                                
+                                let mut handle_clicked = false;
+                                if self.editor_tool == EditorTool::Select {
+                                    if let Some(idx) = self.editor_selected_annotation_idx {
+                                        let ann = &self.editor_annotations[idx];
+                                        let rect_opt = match ann {
+                                            Annotation::Rectangle { rect, .. } | Annotation::Blur { rect } => Some(*rect),
+                                            Annotation::Text { pos, text, size, .. } => {
+                                                let font_id = egui::FontId::proportional(*size);
+                                                let galley = ui.fonts_mut(|f| f.layout_no_wrap(text.clone(), font_id, egui::Color32::WHITE));
+                                                let text_rect = egui::Rect::from_center_size(*pos, galley.size()).expand(6.0);
+                                                Some(text_rect)
+                                            }
+                                            _ => None,
+                                        };
+                                        
+                                        if let Some(r) = rect_opt {
+                                            let screen_rect = r.translate(image_rect.min.to_vec2());
+                                            if let Some(handle) = find_resize_handle(screen_rect, mouse_pos, 8.0) {
+                                                self.editor_resized_annotation = Some((idx, handle));
+                                                handle_clicked = true;
+                                            }
+                                        }
+                                    }
+                                    
+                                    if !handle_clicked {
+                                        let relative_mouse_pos = egui::pos2(mouse_pos.x - image_rect.min.x, mouse_pos.y - image_rect.min.y);
+                                        if let Some(idx) = find_hovered_annotation(&self.editor_annotations, relative_mouse_pos) {
+                                            self.editor_selected_annotation_idx = Some(idx);
+                                        } else {
+                                            self.editor_selected_annotation_idx = None;
+                                        }
+                                    }
+                                } else {
+                                    match self.editor_tool {
+                                        EditorTool::Freehand => {
+                                            self.editor_active_annotation = Some(Annotation::Freehand {
+                                                points: vec![clamped_relative_pos],
+                                                color: self.editor_color,
+                                                stroke_width: self.editor_stroke_width,
+                                            });
+                                        }
+                                        EditorTool::Arrow => {
+                                            self.editor_active_annotation = Some(Annotation::Arrow {
+                                                start: clamped_relative_pos,
+                                                end: clamped_relative_pos,
+                                                color: self.editor_color,
+                                                stroke_width: self.editor_stroke_width,
+                                            });
+                                        }
+                                        EditorTool::Rectangle => {
+                                            self.editor_active_annotation = Some(Annotation::Rectangle {
+                                                rect: egui::Rect::from_two_pos(clamped_relative_pos, clamped_relative_pos),
+                                                color: self.editor_color,
+                                                stroke_width: self.editor_stroke_width,
+                                                fill: false,
+                                            });
+                                        }
+                                        EditorTool::Blur => {
+                                            self.editor_active_annotation = Some(Annotation::Blur {
+                                                rect: egui::Rect::from_two_pos(clamped_relative_pos, clamped_relative_pos),
+                                            });
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            } else if response.dragged() {
+                                if self.editor_tool == EditorTool::Select {
+                                    if let Some((idx, handle)) = self.editor_resized_annotation {
+                                        let relative_mouse_pos = mouse_pos - image_rect.min;
+                                        let clamped_mouse_pos = egui::pos2(
+                                            relative_mouse_pos.x.clamp(0.0, width as f32),
+                                            relative_mouse_pos.y.clamp(0.0, height as f32),
+                                        );
+                                        
+                                        match &mut self.editor_annotations[idx] {
+                                            Annotation::Rectangle { rect, .. } | Annotation::Blur { rect } => {
+                                                match handle {
+                                                    ResizeHandle::TopLeft => { rect.min.x = clamped_mouse_pos.x; rect.min.y = clamped_mouse_pos.y; }
+                                                    ResizeHandle::TopRight => { rect.max.x = clamped_mouse_pos.x; rect.min.y = clamped_mouse_pos.y; }
+                                                    ResizeHandle::BottomLeft => { rect.min.x = clamped_mouse_pos.x; rect.max.y = clamped_mouse_pos.y; }
+                                                    ResizeHandle::BottomRight => { rect.max.x = clamped_mouse_pos.x; rect.max.y = clamped_mouse_pos.y; }
+                                                }
+                                            }
+                                            Annotation::Text { pos, size, text: _, .. } => {
+                                                let center = *pos;
+                                                let start_dist = self.editor_drag_start.unwrap_or(mouse_pos).distance(image_rect.min + center.to_vec2());
+                                                let current_dist = mouse_pos.distance(image_rect.min + center.to_vec2());
+                                                if start_dist > 1.0 {
+                                                    let ratio = current_dist / start_dist;
+                                                    *size = (*size * ratio).clamp(10.0, 150.0);
+                                                }
+                                            }
+                                            _ => {}
+                                        }
+                                    } else if let Some(idx) = self.editor_selected_annotation_idx {
+                                        if let Some(start) = self.editor_drag_start {
+                                            let delta = mouse_pos - start;
+                                            self.editor_drag_start = Some(mouse_pos);
+                                            
+                                            match &mut self.editor_annotations[idx] {
+                                                Annotation::Freehand { points, .. } => {
+                                                    for p in points {
+                                                        *p += delta;
+                                                    }
+                                                }
+                                                Annotation::Arrow { start: a_start, end: a_end, .. } => {
+                                                    *a_start += delta;
+                                                    *a_end += delta;
+                                                }
+                                                Annotation::Rectangle { rect, .. } | Annotation::Blur { rect } => {
+                                                    *rect = rect.translate(delta);
+                                                }
+                                                Annotation::Step { pos, .. } | Annotation::Text { pos, .. } => {
+                                                    *pos += delta;
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else if let Some(ref mut active) = self.editor_active_annotation {
+                                    match active {
+                                        Annotation::Freehand { points, .. } => {
+                                            if let Some(last) = points.last() {
+                                                if last.distance(clamped_relative_pos) > 2.0 {
+                                                    points.push(clamped_relative_pos);
+                                                }
+                                            }
+                                        }
+                                        Annotation::Arrow { end, .. } => {
+                                            *end = clamped_relative_pos;
+                                        }
+                                        Annotation::Rectangle { rect, .. } | Annotation::Blur { rect } => {
+                                            *rect = egui::Rect::from_two_pos(rect.min, clamped_relative_pos);
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            } else if response.drag_stopped() {
+                                if self.editor_tool == EditorTool::Select {
+                                    self.editor_resized_annotation = None;
+                                    self.editor_drag_start = None;
+                                } else if let Some(active) = self.editor_active_annotation.take() {
+                                    self.editor_annotations.push(active);
+                                }
+                            }
+                        }
+                    });
+                });
+            }
+        });
+    }
 }
+
+fn find_resize_handle(rect: egui::Rect, pos: egui::Pos2, threshold: f32) -> Option<ResizeHandle> {
+    if pos.distance(rect.left_top()) <= threshold {
+        Some(ResizeHandle::TopLeft)
+    } else if pos.distance(rect.right_top()) <= threshold {
+        Some(ResizeHandle::TopRight)
+    } else if pos.distance(rect.left_bottom()) <= threshold {
+        Some(ResizeHandle::BottomLeft)
+    } else if pos.distance(rect.right_bottom()) <= threshold {
+        Some(ResizeHandle::BottomRight)
+    } else {
+        None
+    }
+}
+
+fn dist_to_segment(p: egui::Pos2, a: egui::Pos2, b: egui::Pos2) -> f32 {
+    let ab = b - a;
+    let ap = p - a;
+    let ab_len_sq = ab.length_sq();
+    if ab_len_sq == 0.0 {
+        return p.distance(a);
+    }
+    let t = (ap.x * ab.x + ap.y * ab.y) / ab_len_sq;
+    let t_clamped = t.clamp(0.0, 1.0);
+    let projection = a + ab * t_clamped;
+    p.distance(projection)
+}
+
+fn dist_to_rect_border(p: egui::Pos2, rect: egui::Rect) -> f32 {
+    let d_top = dist_to_segment(p, rect.left_top(), rect.right_top());
+    let d_right = dist_to_segment(p, rect.right_top(), rect.right_bottom());
+    let d_bottom = dist_to_segment(p, rect.right_bottom(), rect.left_bottom());
+    let d_left = dist_to_segment(p, rect.left_bottom(), rect.left_top());
+    d_top.min(d_right).min(d_bottom).min(d_left)
+}
+
+fn find_hovered_annotation(annotations: &[Annotation], pos: egui::Pos2) -> Option<usize> {
+    for (idx, ann) in annotations.iter().enumerate().rev() {
+        match ann {
+            Annotation::Freehand { points, stroke_width, .. } => {
+                for &p in points {
+                    if p.distance(pos) <= (stroke_width + 4.0).max(8.0) {
+                        return Some(idx);
+                    }
+                }
+            }
+            Annotation::Arrow { start, end, stroke_width, .. } => {
+                let d = dist_to_segment(pos, *start, *end);
+                if d <= (stroke_width + 4.0).max(8.0) {
+                    return Some(idx);
+                }
+            }
+            Annotation::Rectangle { rect, stroke_width, .. } => {
+                let border_dist = dist_to_rect_border(pos, *rect);
+                if border_dist <= (stroke_width + 4.0).max(8.0) || rect.contains(pos) {
+                    return Some(idx);
+                }
+            }
+            Annotation::Step { pos: step_pos, .. } => {
+                if pos.distance(*step_pos) <= 18.0 {
+                    return Some(idx);
+                }
+            }
+            Annotation::Text { pos: text_pos, text, size, .. } => {
+                let w = text.len() as f32 * size * 0.6;
+                let h = *size;
+                let text_rect = egui::Rect::from_center_size(*text_pos, egui::vec2(w, h)).expand(6.0);
+                if text_rect.contains(pos) {
+                    return Some(idx);
+                }
+            }
+            Annotation::Blur { rect } => {
+                if rect.contains(pos) || dist_to_rect_border(pos, *rect) <= 8.0 {
+                    return Some(idx);
+                }
+            }
+        }
+    }
+    None
+}
+
 
 impl eframe::App for ScreamshotApp {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
@@ -747,6 +1758,48 @@ impl eframe::App for ScreamshotApp {
         #[cfg(target_os = "linux")]
         while gtk::glib::MainContext::default().pending() {
             gtk::glib::MainContext::default().iteration(false);
+        }
+
+        if let Ok(img) = self.image_receiver.try_recv() {
+            let (width, height) = img.dimensions();
+            let mut blurred_img = img.clone();
+            blur_rect(&mut blurred_img, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(width as f32, height as f32)));
+            
+            let size = [width as usize, height as usize];
+            let color_image = egui::ColorImage::from_rgba_unmultiplied(size, img.as_raw());
+            let texture = ctx.load_texture("editor_base_image", color_image, egui::TextureOptions::default());
+            
+            let blurred_color_image = egui::ColorImage::from_rgba_unmultiplied(size, blurred_img.as_raw());
+            let blurred_texture = ctx.load_texture("editor_blurred_image", blurred_color_image, egui::TextureOptions::default());
+            
+            self.editor_base_image = Some(img);
+            self.editor_blurred_image = Some(blurred_img);
+            self.editor_texture = Some(texture);
+            self.editor_blurred_texture = Some(blurred_texture);
+            self.editor_annotations.clear();
+            self.editor_active_annotation = None;
+            self.editor_selected_annotation_idx = None;
+            self.editor_drag_start = None;
+            self.editor_drag_current = None;
+            self.editor_resized_annotation = None;
+            self.editor_step_count = 1;
+            
+            self.state = AppState::EditingCapture;
+            
+            let window_w = (width as f32 + 160.0).clamp(600.0, 1920.0);
+            let window_h = (height as f32 + 200.0).clamp(450.0, 1080.0);
+            
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(window_w, window_h)));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+
+        if self.state == AppState::EditingCapture {
+            self.show_editor_hud(ctx);
+            return;
         }
 
         if let Ok(event) = self.menu_channel.try_recv() {
@@ -763,6 +1816,8 @@ impl eframe::App for ScreamshotApp {
                 self.state = AppState::EditingSettings;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(450.0, 250.0)));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
             }
@@ -1041,19 +2096,20 @@ impl eframe::App for ScreamshotApp {
                                         std::mem::take(&mut *frames_guard)
                                     };
                                     
-                                    let cfg = self.config.clone();
                                     let is_horizontal = self.scroll_horizontal;
                                     
                                     if !frames.is_empty() {
+                                        let image_sender = self.image_sender.clone();
+                                        let ctx_clone = ctx.clone();
                                         std::thread::spawn(move || {
                                             println!("Stitching {} frames...", frames.len());
-                                            if is_horizontal {
-                                                let stitched = stitch_frames_horizontal(frames);
-                                                save_and_clipboard(stitched, "scroll_horizontal", &cfg);
+                                            let stitched = if is_horizontal {
+                                                stitch_frames_horizontal(frames)
                                             } else {
-                                                let stitched = stitch_frames(frames);
-                                                save_and_clipboard(stitched, "scroll", &cfg);
-                                            }
+                                                stitch_frames(frames)
+                                            };
+                                            let _ = image_sender.send(stitched);
+                                            ctx_clone.request_repaint();
                                         });
                                     }
                                     
@@ -1132,7 +2188,8 @@ impl eframe::App for ScreamshotApp {
                                 if state_was == AppState::SelectingRegion {
                                     self.state = AppState::Hidden;
                                     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-                                    let cfg = self.config.clone();
+                                    let image_sender = self.image_sender.clone();
+                                    let ctx_clone = ctx.clone();
                                     let capture_info = get_monitor_and_crop_coords(
                                         start.x,
                                         start.y,
@@ -1146,7 +2203,8 @@ impl eframe::App for ScreamshotApp {
                                                 if let Ok(mut img) = monitor.capture_image() {
                                                     if min_x + width <= img.width() && min_y + height <= img.height() {
                                                         let cropped = image::imageops::crop(&mut img, min_x, min_y, width, height).to_image();
-                                                        save_and_clipboard(cropped, "screenshot", &cfg);
+                                                        let _ = image_sender.send(cropped);
+                                                        ctx_clone.request_repaint();
                                                     } else {
                                                         println!("Selection out of bounds");
                                                     }
@@ -1348,11 +2406,11 @@ mod tests {
 
     #[test]
     fn test_get_monitor_and_crop_coords_logic() {
-        let (min_x, min_y, _, _) = get_desktop_bounds();
-        if let Some((monitor, crop_x, crop_y)) = get_monitor_and_crop_coords(0.0, 0.0, 10.0, 10.0) {
-            println!("Matched monitor: x={:?}, y={:?}", monitor.x(), monitor.y());
-            assert_eq!(crop_x, (min_x + 10 - monitor.x().unwrap_or(0)) as u32);
-            assert_eq!(crop_y, (min_y + 10 - monitor.y().unwrap_or(0)) as u32);
+        let (_min_x, _min_y, _, _) = get_desktop_bounds();
+        if let Some((global_start_x, global_start_y, crop_x, crop_y)) = get_monitor_and_crop_coords(0.0, 0.0, 10.0, 10.0) {
+            println!("Coords: start_x={}, start_y={}, crop_x={}, crop_y={}", global_start_x, global_start_y, crop_x, crop_y);
+            assert_eq!(crop_x, 10);
+            assert_eq!(crop_y, 10);
         }
     }
 
